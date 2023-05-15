@@ -1,0 +1,168 @@
+// Define directories and files used for outputs.
+def outputs_dir = file("$buildDir/outputs")
+def flatbuffers_license_file = file("flatbuffers/LICENSE")
+
+// Define names for publishing.
+def base_artifact_id = "flatbuffers"
+def artifact_group_id = "edu.wpi.first.thirdparty.frc2023"
+
+// Define names for archives.
+def zip_base_name = "_GROUP_edu_wpi_first_thirdparty_frc2023_ID_flatbuffers_CLS"
+
+// Generate version number.
+def version_file = file("$outputs_dir/version.txt")
+task outputVersions() {
+  outputs.files(version_file)
+
+  doFirst {
+    buildDir.mkdir()
+    outputs_dir.mkdir()
+  }
+
+  doLast {
+    version_file.write project.pub_version
+  }
+}
+
+build.dependsOn outputVersions
+copyAllOutputs.dependsOn outputVersions
+copyAllOutputs.inputs.file version_file
+copyAllOutputs.from version_file
+
+// Create archive of headers.
+task cppHeadersZip(type: Zip) {
+  destinationDirectory = outputs_dir
+  archiveBaseName = zip_base_name
+  classifier = "headers"
+
+  // Copy license files.
+  from(flatbuffers_license_file) {
+    into "/"
+    rename { _ -> "FLATBUFFERS-LICENSE" }
+  }
+
+  // Copy headers.
+  from("${project.flatbuffers_dir}/include") {
+    into "/"
+    include "**/*.h", "**/*.hpp"
+  }
+
+  includeEmptyDirs = false
+
+  // Add task to copy all outputs.
+  project.addTaskToCopyAllOutputs(it)
+}
+
+// Create archive of sources.
+
+task cppSourcesZip(type: Zip) {
+  destinationDirectory = outputs_dir
+  archiveBaseName = zip_base_name
+  classifier = "sources"
+
+  // Copy license files.
+  from(flatbuffers_license_file) {
+    into "/"
+    rename { _ -> "FLATBUFFERS-LICENSE" }
+  }
+
+  // Copy headers.
+  from("${project.flatbuffers_dir}/src") {
+    into "/"
+    include "**/*.c"
+  }
+
+  includeEmptyDirs = false
+
+  // Add task to copy all outputs.
+  project.addTaskToCopyAllOutputs(it)
+}
+
+// Create archive of libraries.
+def types = ["Debug", "Release"]
+types.each { type ->
+  project.tasks.create("cpp${type}LibrariesZip", Zip) {
+    dependsOn "flatbuffers$type"
+
+    destinationDirectory = outputs_dir
+    archiveBaseName = zip_base_name
+    classifier = project.platform_classifier + "static" + type.toLowerCase().replace("release", "")
+
+    // Copy license files.
+    from(flatbuffers_license_file) {
+      into "/"
+      rename { _ -> "FLATBUFFERS-LICENSE" }
+    }
+
+    // Copy libraries.
+    def lib_dir = file("${project.flatbuffers_build}/${type.toLowerCase()}/lib")
+
+    if (project.platform.contains("windows")) {
+      // On Windows, the staging dir is one layer deeper.
+      lib_dir = file("$lib_dir/$type")
+      from("$lib_dir/flatbuffers${project.pub_version}.lib") { into "${project.platform_path}/static" }
+      from("$lib_dir") {
+        into "${project.platform_path}/static"
+        include "*.pdb"
+      }
+    } else {
+      from("$lib_dir/libflatbuffers${project.pub_version}.a") { into "${project.platform_path}/static" }
+    }
+
+    // Add task to copy all outputs.
+    project.addTaskToCopyAllOutputs(it)
+  }
+}
+
+// Create archive of tools.
+task toolsZip(type: Zip) {
+  dependsOn "flatbuffersRelease"
+
+  destinationDirectory = outputs_dir
+  archiveBaseName = zip_base_name
+  classifier = project.platform_classifier + "tools"
+
+  // Copy license files.
+  from(flatbuffers_license_file) {
+    into "/"
+    rename { _ -> "FLATBUFFERS-LICENSE" }
+  }
+
+  // Copy tools.
+  def exe_dir = file("${project.flatbuffers_build}/release")
+
+  if (project.platform.contains("windows")) {
+    // On Windows, the staging dir is one layer deeper.
+    from("$exe_dir/Release") {
+      into "/"
+      include "*.exe"
+    }
+  } else {
+    from("$exe_dir") {
+      into "/"
+      include "flatc"
+    }
+  }
+
+  // Add task to copy all outputs.
+  project.addTaskToCopyAllOutputs(it)
+}
+
+
+model {
+  publishing {
+    publications {
+      flatbuffers(MavenPublication) {
+        artifact cppHeadersZip
+        artifact cppSourcesZip
+        artifact cppDebugLibrariesZip
+        artifact cppReleaseLibrariesZip
+        artifact toolsZip
+
+        artifactId = base_artifact_id
+        groupId = artifact_group_id
+        version = project.pub_version
+      }
+    }
+  }
+}

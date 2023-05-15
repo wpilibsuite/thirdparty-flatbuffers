@@ -1,0 +1,124 @@
+task prepareLibSshirectories {
+    mustRunAfter clean
+    doLast {
+        mkdir project.file("$project.flatbuffers_build/release")
+        mkdir project.file("$project.flatbuffers_build/debug")
+    }
+}
+
+// Runs the configure step.
+def types = ["Debug", "Release"]
+types.each { type ->
+  project.tasks.create("configureFlatbuffers$type", Exec) {
+    // Create an alias to the build directory.
+    def build_dir = file("$flatbuffers_build/${type.toLowerCase()}")
+
+    // LibSSH is configured with CMake. We want to build static libraries. Also set
+    // the archive to be stored in build/lib instead of build/src (the default).
+    executable "cmake"
+    args "$flatbuffers_dir"
+
+    if (project.platform == "osx-arm64") {
+      args "-DCMAKE_OSX_ARCHITECTURES=arm64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=\"11.0\""
+      environment "ARCHFLAGS", "-arch arm64"
+    } else if (project.platform == "osx-x86_64") {
+      args "-DCMAKE_OSX_ARCHITECTURES=x86_64", "-DCMAKE_OSX_DEPLOYMENT_TARGET=\"10.15\""
+      environment "ARCHFLAGS", "-arch x86_64"
+    } else if (project.platform == "linux-arm64") {
+      if (project.hasProperty('forcecrossbuild')) {
+        args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/aarch64-bullseye-gnu.toolchain.cmake"
+      }
+    } else if (project.platform == "linux-arm32") {
+      if (project.hasProperty('forcecrossbuild')) {
+       args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/arm-pi-gnueabihf.toolchain.cmake"
+      }
+    } else if (project.platform == "linux-athena") {
+      args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/arm-frc-gnueabi.toolchain.cmake"
+    }
+
+    args "-DBUILD_SHARED_LIBS=OFF", "-DFLATBUFFERS_BUILD_TESTS=OFF", "-DFLATBUFFERS_STATIC_FLATC=ON",
+        "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${build_dir}/lib", "-DCMAKE_BUILD_TYPE=$type"
+    workingDir build_dir
+
+    // Add the arch specifier for Windows.
+    if (project.platform.contains("windows")) {
+      args "-A"
+      args project.platform == "windows-x86" ? "Win32" : "x64"
+    }
+
+    dependsOn prepareLibSshirectories
+  }
+}
+
+// Runs the build step.
+types.each { type ->
+  project.tasks.create("buildFlatbuffers$type", Exec) {
+    // Make sure that we are configured.
+    dependsOn "configureFlatbuffers$type"
+
+    // Create an alias to the build directory.
+    def build_dir = file("$flatbuffers_build/${type.toLowerCase()}")
+
+    // Use CMake to invoke the low-level build system.
+    executable "cmake"
+    args "--build", ".", "--parallel", "${project.processors}"
+    workingDir build_dir
+
+    // Specify arch and build type on Windows.
+    if (project.platform.contains("windows")) {
+      args "--", "/p:Configuration=$type", "/v:m",
+          project.platform == "windows-x86" ? "/p:Platform=win32" : "/p:Platform=x64"
+    }
+  }
+}
+
+// Runs the archiver step.
+types.each { type ->
+  project.tasks.create("create${type}Archive", Exec) {
+    // Make sure that we have built.
+    dependsOn "buildFlatbuffers$type"
+
+    // Create an alias to the libraries directories.
+    def libs = file("${project.flatbuffers_build}/${type.toLowerCase()}/lib")
+
+    if (project.platform.contains("windows")) {
+      // LibSSH libraries are one layer deeper on windows.
+      libs = file("$libs/$type")
+
+      // Use "lib" to merge libraries.
+      executable "lib"
+      args "/OUT:flatbuffers${project.pub_version}.lib"
+      workingDir libs
+
+      // Add libraries to merge.
+      args "$libs/flatbuffers.lib"
+    } else if (project.platform.contains("osx")) {
+      // Use libtool to merge libraries.
+      executable "libtool"
+      args "-static", "-o", "libflatbuffers${project.pub_version}.a"
+      workingDir libs
+
+      // Add libraries to merge.
+      args "$libs/libflatbuffers.a"
+    } else {
+      // Use ar to merge libraries.
+      executable "ar"
+      args "-M"
+      workingDir libs
+
+      // Add libraries to merge.
+      def str = "create libflatbuffers${project.pub_version}.a\n"
+      str += "addlib $libs/libflatbuffers.a\n"
+      str += "save\nend\n"
+
+      standardInput = new ByteArrayInputStream(str.getBytes())
+    }
+  }
+}
+
+// Create a "mega-task" that builds everything.
+types.each { type ->
+  project.tasks.create("flatbuffers$type") {
+    dependsOn "create${type}Archive"
+  }
+}
