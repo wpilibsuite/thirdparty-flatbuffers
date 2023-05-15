@@ -66,10 +66,10 @@ task cppSourcesZip(type: Zip) {
     rename { _ -> "FLATBUFFERS-LICENSE" }
   }
 
-  // Copy headers.
+  // Copy sources.
   from("${project.flatbuffers_dir}/src") {
     into "/"
-    include "**/*.c"
+    include "**/*.cpp", "**/*.h"
   }
 
   includeEmptyDirs = false
