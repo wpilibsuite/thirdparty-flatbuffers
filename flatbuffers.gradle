@@ -28,15 +28,19 @@ types.each { type ->
       if (project.hasProperty('forcecrossbuild')) {
         args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/aarch64-bullseye-gnu.toolchain.cmake"
       }
+      args "-DFLATBUFFERS_STATIC_FLATC=ON"
     } else if (project.platform == "linux-arm32") {
       if (project.hasProperty('forcecrossbuild')) {
        args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/arm-pi-gnueabihf.toolchain.cmake"
       }
+      args "-DFLATBUFFERS_STATIC_FLATC=ON"
     } else if (project.platform == "linux-athena") {
       args "-DCMAKE_TOOLCHAIN_FILE=$rootDir/cmake/arm-frc-gnueabi.toolchain.cmake"
+    } else {
+      args "-DFLATBUFFERS_STATIC_FLATC=ON"
     }
 
-    args "-DBUILD_SHARED_LIBS=OFF", "-DFLATBUFFERS_BUILD_TESTS=OFF", "-DFLATBUFFERS_STATIC_FLATC=ON",
+    args "-DBUILD_SHARED_LIBS=OFF", "-DFLATBUFFERS_BUILD_TESTS=OFF",
         "-DCMAKE_ARCHIVE_OUTPUT_DIRECTORY=${build_dir}/lib", "-DCMAKE_BUILD_TYPE=$type"
     workingDir build_dir
 
