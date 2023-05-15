@@ -29,6 +29,7 @@ static def get_platform() {
   } else {
     platform = "${os_name}-${os_arch}"
   }
+
   return platform
 }
 
@@ -97,8 +98,8 @@ task copyAllOutputs(type: Copy) {
 
 ext.addTaskToCopyAllOutputs = { task ->
   copyAllOutputs.dependsOn task
-  copyAllOutputs.inputs.file task.archivePath
-  copyAllOutputs.from task.archivePath
+  copyAllOutputs.inputs.file task.archiveFile
+  copyAllOutputs.from task.archiveFile
 }
 
 task build {
@@ -108,5 +109,5 @@ task build {
 apply from: "publish.gradle"
 
 wrapper {
-    gradleVersion = '7.5.1'
+    gradleVersion = '8.1'
 }
